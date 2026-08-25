@@ -1,0 +1,4 @@
+order_id,requested_qty,allocated_stock,allocated_po,shortage
+SO001,70,70,0,0
+SO002,80,30,40,10
+SO003,60,0,50,10

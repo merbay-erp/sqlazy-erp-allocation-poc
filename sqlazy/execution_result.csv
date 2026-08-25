@@ -1,0 +1,4 @@
+order_id,material_id,warehouse_id,required_date,priority,requested_qty,allocated_stock,allocated_po,shortage,stock_remaining,po_remaining
+SO001,M100,W1,2026-09-01,1,70,70,0,0,30,0
+SO002,M100,W1,2026-09-03,2,80,30,40,10,0,0
+SO003,M100,W1,2026-09-05,2,60,0,50,10,0,0

@@ -1,0 +1,20 @@
+stock_valid=stock:compute qty_on_hand-qty_reserved, as usable_stock
+demand_open=sales_orders:filter status="OPEN"
+demand_ordered=sort priority, required_date, order_id
+demand_stocked=join material_id, warehouse_id; with stock_valid; material_id, warehouse_id; take usable_stock; inner
+po_confirmed=purchase_orders:filter status="CONFIRMED"
+demand_po_rows=demand_stocked:join material_id, warehouse_id; with po_confirmed; material_id, warehouse_id; take expected_date, qty as po_qty
+demand_supply=summarize first material_id as material_id, first warehouse_id as warehouse_id, first required_date as required_date, first qty as requested_qty, first priority as priority, first usable_stock as usable_stock, condition expected_date<=required_date sum po_qty as cumulative_po; group order_id
+demand_resorted=sort priority, required_date, order_id
+supply_delta=compute (if (cumulative_po isnull then 0 else cumulative_po))-(if (cumulative_po[-1] isnull then 0 else cumulative_po[-1])), as new_po
+demand_cum=compute requested_qty cum as cumulative_demand
+stock_balance=compute if (usable_stock>=cumulative_demand then usable_stock-cumulative_demand else 0), as stock_remaining
+stock_alloc=compute if (usable_stock>=cumulative_demand then requested_qty else if (usable_stock>cumulative_demand-requested_qty then usable_stock-(cumulative_demand-requested_qty) else 0)), as allocated_stock
+po_need=compute requested_qty-allocated_stock, as demand_after_stock
+po_net=compute new_po-demand_after_stock cum as po_net_cumulative
+po_min=compute min, po_net_cumulative[-1000000:0], as po_min_cumulative
+po_regulator=compute if (po_min_cumulative<0 then 0-po_min_cumulative else 0), as po_shortage_cumulative
+shortage_delta=compute po_shortage_cumulative-(if (po_shortage_cumulative[-1] isnull then 0 else po_shortage_cumulative[-1])), as shortage
+po_alloc=compute demand_after_stock-shortage, as allocated_po
+po_balance=compute po_net_cumulative+po_shortage_cumulative, as po_remaining
+allocation_result=derive order_id, material_id, warehouse_id, required_date, priority, requested_qty, allocated_stock, allocated_po, shortage, stock_remaining, po_remaining
