@@ -1,0 +1,4 @@
+prod_id,material_id,warehouse_id,required_date,qty,status
+PROD001,M100,W1,2026-09-06,25,CONFIRMED
+PROD201,M200,W2,2026-09-05,5,CONFIRMED
+PROD999,M100,W1,2026-09-02,500,DRAFT

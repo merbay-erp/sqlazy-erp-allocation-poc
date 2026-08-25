@@ -1,53 +1,69 @@
 # SQLazy execution notes
 
-## Capability review
+## Captured run
 
-The public SQLazy knowledge base documents actions for filtering, sorting, joining, computing columns, summarizing, deriving projections, and cross-row calculations. This workflow uses `if`, postfix `isnull`, cumulative `compute`, relative-row references such as `field[-1]`, and a bounded running-min interval.
+- Date: 2026-08-25
+- Application: official SQLazy web app
+- Dialect: `POSTGRES`
+- Final workflow: 35 NSPL steps
+- Compiler query body: 17,922 characters
 
-## Business decomposition
+The official runtime returned the seven rows stored in `execution_result.csv`. The final step was then compiled, and the captured query was wrapped only with:
 
-1. Calculate usable opening stock.
-2. Keep only open demand and order it deterministically.
-3. Keep only confirmed POs and calculate supply eligible by each required date.
-4. Turn cumulative PO eligibility into newly available supply.
-5. Derive stock consumption from cumulative demand.
-6. Derive PO balance and shortage from cumulative net supply and its running minimum.
-7. Project allocations, shortage, and remaining balances.
+```sql
+CREATE OR REPLACE VIEW sqlazy_allocation_result AS
+```
 
-## Action matching
+The resulting file is `generated_postgresql.sql`.
 
-| Need | SQLazy action/function |
+## Web input anchors
+
+Use these files from `sqlazy/input/`:
+
+| Anchor | CSV |
 |---|---|
-| Normalize stock | `compute` |
-| Filter statuses | `filter` |
-| Stable demand sequence | `sort` |
-| Attach stock and PO rows | `join` |
-| PO supply eligible by date | conditional `summarize` |
-| Cumulative demand and net PO flow | `compute ... cum` |
-| Previous-row delta | `compute` with `field[-1]`, `if`, and `isnull` |
-| Running shortage regulator | `compute min` over a relative interval |
-| Final columns | `derive` |
+| `stock` | `stock.csv` |
+| `sales_orders` | `sales_orders.csv` |
+| `production_orders` | `production_orders.csv` |
+| `supply_events_sqlazy` | `supply_events_sqlazy.csv` |
 
-## Compiler provenance
+The base purchase-order and transfer CSVs are included separately to reconstruct the adapter event stream.
 
-On 2026-08-25 `allocation.nspl` was imported into the official SQLazy web app. The `stock`, `sales_orders`, and `purchase_orders` anchors were populated with the fixed CSV data, the full workflow was executed, and `allocation_result` returned the three expected rows. The captured web result is stored in `execution_result.csv`.
+## Workflow outline
 
-The target dialect was then set to `POSTGRES` and the final step was compiled. `generated_postgresql.sql` contains that compiler-produced query. The only manual addition is the leading `CREATE OR REPLACE VIEW sqlazy_allocation_result AS` wrapper and provenance comments required by the repeatable SQL test harness.
+1. Normalize usable stock.
+2. Filter and normalize sales demand.
+3. Filter and normalize production demand with priority 3.
+4. Concatenate and deterministically order demand.
+5. Join stock by material/warehouse.
+6. Filter the unified incoming-supply event stream.
+7. Join supply once and conditionally summarize cumulative PO and transfer availability.
+8. Re-sort demand and calculate the running maximum supply frontier.
+9. Introduce only frontier increases as new PO/transfer supply.
+10. Allocate stock, then PO, then transfer through partitioned balance regulators.
+11. Return the exact eleven requested columns.
 
-The wrapped compiler query passed the complete verification suite in a fresh local PostgreSQL 14.18 database and in the Docker Compose PostgreSQL 16 service.
+## Why an adapter view is present
 
-The first stateful formulation executed in SQLazy but the compiler rejected a current-alias reference in row 10 (`stock_remaining`). The final formulation replaces recursive aliases with cumulative demand and a running-min regulator. A second compiler-specific adjustment replaced numeric `nvl` calls with `isnull`/`if`, avoiding generated `NULLIF(number, '')` expressions. These are observed compiler behaviors, not hypothetical limitations.
+The interpreter accepted a second join after an aggregate, but the POSTGRES compiler returned `When compiling row 14, error: null`. Renaming the transfer key in a prior `derive` or `compute` step did not change the result.
 
-## Reproduction procedure
+The final solution uses `supply_events_sqlazy`, a read-only `UNION ALL` view over the exact purchase-order and transfer tables. This removes the second join while preserving the required supply type and destination semantics.
 
-1. Configure the three input tables in the SQLazy IDE or web app.
-2. Import `allocation.nspl`.
-3. Execute the workflow and compare `allocation_result` with `execution_result.csv`.
-4. Select `POSTGRES`, compile the final step, and compare the query with the body of `generated_postgresql.sql`.
-5. Run `make verify`.
+## Other observed compiler adjustments
 
-## Known abstraction risk
+- A previous-row current-alias formulation ran but did not compile.
+- Numeric `nvl` emitted invalid number/empty-string comparisons in PostgreSQL.
+- `isnull`/`if` and cumulative running-min regulators compiled successfully.
+- Stateful windows are explicitly partitioned by `stream_key = material_id | warehouse_id`.
+- Running max/min expressions use `[-1000000:0]`, which compiles to a finite one-million-row frame.
 
-The NSPL computes newly eligible PO supply as the difference between cumulative PO availability in adjacent demand rows. This is correct for the fixed dataset and the three scoped edge cases because required dates are nondecreasing in allocation order. If priority ordering makes required dates move backwards, remaining PO lots must be tracked by expected date; the native reference function already does this, but the current NSPL does not.
+## Verification
 
-The POC has one material/warehouse stream. The emitted window functions are global and require explicit partitioning before a multi-stream production use case. The running minimum is compiled from `po_net_cumulative[-1000000:0]`, so its frame is finite at one million preceding rows.
+The captured compiler SQL passed:
+
+- the seven-row fixed result;
+- bidirectional comparison with the web CSV, expected CSV, and native reference;
+- conservation and non-negative invariants;
+- stock, PO, and destination-transfer supply caps;
+- six edge scenarios;
+- PostgreSQL 14.18 and 16.14.

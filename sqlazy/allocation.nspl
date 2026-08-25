@@ -1,20 +1,35 @@
 stock_valid=stock:compute qty_on_hand-qty_reserved, as usable_stock
-demand_open=sales_orders:filter status="OPEN"
-demand_ordered=sort priority, required_date, order_id
-demand_stocked=join material_id, warehouse_id; with stock_valid; material_id, warehouse_id; take usable_stock; inner
-po_confirmed=purchase_orders:filter status="CONFIRMED"
-demand_po_rows=demand_stocked:join material_id, warehouse_id; with po_confirmed; material_id, warehouse_id; take expected_date, qty as po_qty
-demand_supply=summarize first material_id as material_id, first warehouse_id as warehouse_id, first required_date as required_date, first qty as requested_qty, first priority as priority, first usable_stock as usable_stock, condition expected_date<=required_date sum po_qty as cumulative_po; group order_id
-demand_resorted=sort priority, required_date, order_id
-supply_delta=compute (if (cumulative_po isnull then 0 else cumulative_po))-(if (cumulative_po[-1] isnull then 0 else cumulative_po[-1])), as new_po
-demand_cum=compute requested_qty cum as cumulative_demand
+sales_open=sales_orders:filter status="OPEN"
+sales_positive=filter qty>0
+sales_demand=derive concat(material_id,"|",warehouse_id) as stream_key, material_id, warehouse_id, "SALES" as demand_type, order_id as document_id, required_date, qty as requested_qty, priority
+production_confirmed=production_orders:filter status="CONFIRMED"
+production_positive=filter qty>0
+production_demand=derive concat(material_id,"|",warehouse_id) as stream_key, material_id, warehouse_id, "PRODUCTION" as demand_type, prod_id as document_id, required_date, qty as requested_qty, 3 as priority
+demand_all=sales_demand:set concat; production_demand
+demand_ordered=sort stream_key, priority, required_date, document_id
+demand_stocked=join material_id, warehouse_id; with stock_valid; material_id, warehouse_id; take usable_stock
+supply_events_confirmed=supply_events_sqlazy:filter status="CONFIRMED"
+supply_events_ready=filter qty>0
+demand_supply_rows=demand_stocked:join material_id, warehouse_id; with supply_events_ready; material_id, warehouse_id; take supply_type, available_date, qty as supply_qty
+demand_supply=summarize first stream_key as stream_key, first material_id as material_id, first warehouse_id as warehouse_id, first demand_type as demand_type, first required_date as required_date, first requested_qty as requested_qty, first priority as priority, first usable_stock as usable_stock, condition supply_type="PURCHASE_ORDER" && available_date<=required_date sum supply_qty as cumulative_po, condition supply_type="TRANSFER" && available_date<=required_date sum supply_qty as cumulative_transfer; group document_id
+demand_resorted=sort stream_key, priority, required_date, document_id
+supply_frontier=compute max, cumulative_po[-1000000:0], as po_frontier; max, cumulative_transfer[-1000000:0], as transfer_frontier; partition stream_key
+supply_delta=compute (if (po_frontier isnull then 0 else po_frontier))-(if (po_frontier[-1] isnull then 0 else po_frontier[-1])), as new_po; (if (transfer_frontier isnull then 0 else transfer_frontier))-(if (transfer_frontier[-1] isnull then 0 else transfer_frontier[-1])), as new_transfer; partition stream_key
+demand_cum=compute requested_qty cum as cumulative_demand; partition stream_key
 stock_balance=compute if (usable_stock>=cumulative_demand then usable_stock-cumulative_demand else 0), as stock_remaining
-stock_alloc=compute if (usable_stock>=cumulative_demand then requested_qty else if (usable_stock>cumulative_demand-requested_qty then usable_stock-(cumulative_demand-requested_qty) else 0)), as allocated_stock
-po_need=compute requested_qty-allocated_stock, as demand_after_stock
-po_net=compute new_po-demand_after_stock cum as po_net_cumulative
-po_min=compute min, po_net_cumulative[-1000000:0], as po_min_cumulative
+stock_alloc=compute if (usable_stock>=cumulative_demand then requested_qty else if (usable_stock>cumulative_demand-requested_qty then usable_stock-(cumulative_demand-requested_qty) else 0)), as allocated_from_stock
+po_need=compute requested_qty-allocated_from_stock, as demand_after_stock
+po_net=compute new_po-demand_after_stock cum as po_net_cumulative; partition stream_key
+po_min=compute min, po_net_cumulative[-1000000:0], as po_min_cumulative; partition stream_key
 po_regulator=compute if (po_min_cumulative<0 then 0-po_min_cumulative else 0), as po_shortage_cumulative
-shortage_delta=compute po_shortage_cumulative-(if (po_shortage_cumulative[-1] isnull then 0 else po_shortage_cumulative[-1])), as shortage
-po_alloc=compute demand_after_stock-shortage, as allocated_po
+po_shortage_delta=compute po_shortage_cumulative-(if (po_shortage_cumulative[-1] isnull then 0 else po_shortage_cumulative[-1])), as demand_after_po; partition stream_key
+po_alloc=compute demand_after_stock-demand_after_po, as allocated_from_purchase_orders
 po_balance=compute po_net_cumulative+po_shortage_cumulative, as po_remaining
-allocation_result=derive order_id, material_id, warehouse_id, required_date, priority, requested_qty, allocated_stock, allocated_po, shortage, stock_remaining, po_remaining
+transfer_net=compute new_transfer-demand_after_po cum as transfer_net_cumulative; partition stream_key
+transfer_min=compute min, transfer_net_cumulative[-1000000:0], as transfer_min_cumulative; partition stream_key
+transfer_regulator=compute if (transfer_min_cumulative<0 then 0-transfer_min_cumulative else 0), as transfer_shortage_cumulative
+shortage_delta=compute transfer_shortage_cumulative-(if (transfer_shortage_cumulative[-1] isnull then 0 else transfer_shortage_cumulative[-1])), as remaining_shortage; partition stream_key
+transfer_alloc=compute demand_after_po-remaining_shortage, as allocated_from_transfers
+transfer_balance=compute transfer_net_cumulative+transfer_shortage_cumulative, as transfer_remaining
+projected_balance=compute stock_remaining+po_remaining+transfer_remaining, as projected_stock_after_allocation
+allocation_result=derive material_id, warehouse_id, demand_type, document_id, required_date, requested_qty, allocated_from_stock, allocated_from_purchase_orders, allocated_from_transfers, remaining_shortage, projected_stock_after_allocation

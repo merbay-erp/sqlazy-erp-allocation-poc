@@ -1,3 +1,4 @@
 .codex_tmp/
 .DS_Store
-
+.idea/
+*.iml

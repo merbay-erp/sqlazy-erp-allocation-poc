@@ -1,0 +1,19 @@
+name: Verify ERP allocation POC
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  postgres-16:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start PostgreSQL 16
+        run: make up
+      - name: Compare expected, SQLazy, and native results
+        run: make verify
+      - name: Stop services
+        if: always()
+        run: make down

@@ -1,0 +1,4 @@
+transfer_id,material_id,from_warehouse,to_warehouse,expected_date,qty,status
+T201,M100,W2,W1,2026-09-05,30,CONFIRMED
+T202,M200,W1,W2,2026-09-04,5,CONFIRMED
+T999,M100,W2,W1,2026-09-01,500,DRAFT

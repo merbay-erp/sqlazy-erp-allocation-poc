@@ -1,0 +1,3 @@
+material_id,warehouse_id,qty_on_hand,qty_reserved
+M100,W1,120,20
+M200,W2,50,0

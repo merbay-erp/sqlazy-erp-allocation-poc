@@ -1,4 +1,8 @@
-order_id,material_id,warehouse_id,required_date,priority,requested_qty,allocated_stock,allocated_po,shortage,stock_remaining,po_remaining
-SO001,M100,W1,2026-09-01,1,70,70,0,0,30,0
-SO002,M100,W1,2026-09-03,2,80,30,40,10,0,0
-SO003,M100,W1,2026-09-05,2,60,0,50,10,0,0
+material_id,warehouse_id,demand_type,document_id,required_date,requested_qty,allocated_from_stock,allocated_from_purchase_orders,allocated_from_transfers,remaining_shortage,projected_stock_after_allocation
+M100,W1,SALES,SO001,2026-09-01,70,70,0,0,0,30
+M100,W1,SALES,SO002,2026-09-03,80,30,40,0,10,0
+M100,W1,SALES,SO003,2026-09-05,60,0,50,10,0,20
+M100,W1,PRODUCTION,PROD001,2026-09-06,25,0,0,20,5,0
+M200,W2,SALES,SO201,2026-09-02,40,40,0,0,0,10
+M200,W2,SALES,SO202,2026-09-04,30,10,10,5,5,0
+M200,W2,PRODUCTION,PROD201,2026-09-05,5,0,0,0,5,0

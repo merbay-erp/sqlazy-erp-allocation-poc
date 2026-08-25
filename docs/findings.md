@@ -1,41 +1,54 @@
 # Findings
 
-## What worked
+## Confirmed outcomes
 
-- The fixed dataset is compact enough for manual verification.
-- Status filtering, deterministic sorting, date eligibility, partial allocation, and conservation invariants are explicit.
-- The native PostgreSQL implementation tracks each confirmed PO lot independently, so supply is never reused and late supply is not applied retroactively.
-- The verification harness compares expected, native, and real SQLazy-compiler results and runs the three requested edge cases.
-- On 2026-08-25 the fixed dataset ran successfully in the official SQLazy web app and returned the expected three rows.
-- The captured SQLazy `POSTGRES` output, base verification, and all three edge cases passed in a fresh PostgreSQL 14.18 (Homebrew) database and again in the Dockerized PostgreSQL 16 target.
+- The full five-table ERP model is implemented without changing the specified source columns.
+- Official SQLazy web runtime output matched all seven expected rows.
+- SQLazy's real POSTGRES compiler produced executable SQL.
+- Compiler SQL, web output, expected CSV, and the independent native reference matched exactly.
+- PostgreSQL 14.18 and 16.14 both passed the base verification and six edge scenarios.
+- Material/warehouse partitions, production demand, transfer destinations, statuses, partial allocation, and backward-moving dates are explicitly tested.
 
-## Where the abstraction leaked
+## Design decisions
 
-- Progressive allocation needs state carried from one demand row to the next.
-- A direct previous-row balance formulation ran in SQLazy but could not be compiled because the compiler rejected a current-alias reference. Recasting the logic as cumulative demand plus a running-min regulator made both runtime and compilation succeed.
-- Numeric `nvl` generated PostgreSQL that compared numbers with empty strings. Replacing it with `isnull`/`if` produced executable SQL.
-- The cumulative-PO delta is valid only while required dates are nondecreasing in allocation order. A priority sequence that moves backward in date needs per-PO-lot state, which the native reference handles explicitly.
-- The emitted windows are global for this one-material/one-warehouse POC; multi-stream use requires explicit partitioning.
+### Production priority
 
-## Debugging experience
+The supplied production schema has no priority column. The POC assigns confirmed production demand priority 3, after the sales priorities in the fixed case. This is declared in both implementations and tested.
 
-- The tiny base case made incorrect date/status handling immediately visible.
-- Keeping the native implementation independent from the SQLazy workflow made the comparison more meaningful than duplicating one query under two names.
-- Named NSPL intermediates made it easy to isolate runtime/compiler differences at the exact failing row.
+### Unified supply adapter
 
-## Generated SQL quality
+The base source model remains unchanged. A read-only `supply_events_sqlazy` view maps:
 
-- The real compiler query is executable and correct for the planned scope.
-- It expands 20 NSPL steps into 12 CTEs and several window functions.
-- Some output is mechanically verbose: conditional summaries become `FIRST_VALUE` plus `MAX`, and `LAG` expressions are repeated.
-- The bounded NSPL running-min interval becomes `ROWS BETWEEN 1000000 PRECEDING AND CURRENT ROW`.
+- purchase order warehouse directly to `warehouse_id`;
+- transfer `to_warehouse` to `warehouse_id`;
+- both expected dates to `available_date`;
+- a discriminator to `PURCHASE_ORDER` or `TRANSFER`.
 
-## Native SQL comparison
+This is a compiler compatibility boundary. It lets one SQLazy join attach both eligible supply types while later stages still enforce PO-before-transfer consumption.
 
-- The native implementation favors correctness and auditability over compactness: a PL/pgSQL function carries stock and JSONB PO-lot balances explicitly.
-- SQLazy web runtime, SQLazy-compiled PostgreSQL, and the native implementation all produced `SO001=70/0/0`, `SO002=30/40/10`, and `SO003=0/50/10` for stock/PO/shortage, with total shortage 20.
-- Performance was not benchmarked; the project plan marks it optional after correctness, so it remains outside this POC.
+### Running supply frontier
+
+Cumulative eligible supply can fall when priority ordering moves required dates backward. Adjacent cumulative differences would then create negative “new supply.” The final workflow uses the maximum cumulative amount ever reached per stream and introduces only increases in that frontier. The native per-lot implementation and the date-reversal test independently verify the behavior.
+
+## Observed SQLazy behavior
+
+These are measured observations from the web app on 2026-08-25:
+
+- Direct current-alias state expressions ran in the interpreter but the compiler rejected them.
+- Numeric `nvl` generated PostgreSQL expressions comparing numbers with empty strings.
+- A second join after an aggregate failed compilation with only `null` as the reported cause.
+- Refactoring to window regulators, `isnull`/`if`, one supply join, and a supply frontier produced executable PostgreSQL.
+- The final 35 NSPL steps expanded into 753 SQL lines and 20 CTEs.
+
+## Remaining engineering boundary
+
+The POC is correctness-complete for the stated challenge, but not production-certified.
+
+- Running frames are finite at one million prior rows because SQLazy compiles the relative interval literally.
+- No representative-volume benchmark has been run.
+- Concurrent reservation/allocation transactions, isolation level, retries, and locking are outside this read-only calculation.
+- Production deployments should decide whether the supply adapter is a view, materialized view, or maintained event table based on data volume and freshness requirements.
 
 ## Verdict
 
-For the planned single-material/single-warehouse workload, SQLazy **passed the correctness POC**: its runtime result matched the expected CSV, its real PostgreSQL compiler output matched the independent native reference, and all three edge cases passed. It is not yet production-qualified because multi-stream partitioning, backward-moving dates under priority ordering, the finite running-min frame, and performance remain outside the verified scope.
+SQLazy passes the full correctness POC when the workflow is shaped around the observed compiler constraints. Its source representation is compact and reviewable; native PostgreSQL remains the more explicit control for lot-by-lot mutable state. The repository demonstrates both claims with runnable evidence.
