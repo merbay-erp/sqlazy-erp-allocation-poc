@@ -2,19 +2,19 @@
 
 ## Captured run
 
-- Date: 2026-08-25
+- Date: 2026-08-27
 - Application: official SQLazy web app
 - Dialect: `POSTGRES`
 - Final workflow: 35 NSPL steps
-- Compiler query body: 17,922 characters
+- Compiler query body: 18,454 characters
 
-The official runtime returned the seven rows stored in `execution_result.csv`. The final step was then compiled, and the captured query was wrapped only with:
+The official runtime materialized all 35 named steps and returned the seven rows stored in `runtime/current-result.csv`. The final step was then compiled, and the captured query was wrapped only with:
 
 ```sql
 CREATE OR REPLACE VIEW sqlazy_allocation_result AS
 ```
 
-The resulting file is `generated_postgresql.sql`.
+The resulting current file is `compiled/postgres-current.sql`. The previous 753-line output is preserved separately as `compiled/postgres-legacy.sql`.
 
 ## Web input anchors
 
@@ -37,7 +37,7 @@ The base purchase-order and transfer CSVs are included separately to reconstruct
 4. Concatenate and deterministically order demand.
 5. Join stock by material/warehouse.
 6. Filter the unified incoming-supply event stream.
-7. Join supply once and conditionally summarize cumulative PO and transfer availability.
+7. Join supply once and conditionally summarize cumulative PO and transfer availability using the current trailing-condition syntax and the explicit binding seed described in `COMPATIBILITY.md`.
 8. Re-sort demand and calculate the running maximum supply frontier.
 9. Introduce only frontier increases as new PO/transfer supply.
 10. Allocate stock, then PO, then transfer through partitioned balance regulators.
@@ -56,10 +56,11 @@ The final solution uses `supply_events_sqlazy`, a read-only `UNION ALL` view ove
 - `isnull`/`if` and cumulative running-min regulators compiled successfully.
 - Stateful windows are explicitly partitioned by `stream_key = material_id | warehouse_id`.
 - Running max/min expressions use `[-1000000:0]`, which compiles to a finite one-million-row frame.
+- The 2026-08-27 runtime/compiler applied a trailing condition to the following aggregate, not the preceding aggregate described in the release note. `compatibility_filter_seed` keeps the intended PO and transfer bindings; the isolated failure and workaround are documented in `COMPATIBILITY.md`.
 
 ## Verification
 
-The captured compiler SQL passed:
+The current captured compiler SQL passed:
 
 - the seven-row fixed result;
 - bidirectional comparison with the web CSV, expected CSV, and native reference;
@@ -67,3 +68,5 @@ The captured compiler SQL passed:
 - stock, PO, and destination-transfer supply caps;
 - six edge scenarios;
 - PostgreSQL 14.18 and 16.14.
+
+The current artifact is 772 lines / 20 CTEs, compared with the preserved legacy artifact at 753 lines / 20 CTEs. This measurement is compatibility evidence, not a performance claim.

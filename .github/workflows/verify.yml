@@ -5,14 +5,29 @@ on:
   pull_request:
 
 jobs:
-  postgres-16:
+  syntax-regression:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
-      - name: Start PostgreSQL 16
+      - name: Reject deprecated SQLazy conditional aggregates
+        run: make lint
+
+  postgres:
+    needs: syntax-regression
+    name: PostgreSQL ${{ matrix.version }}
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ["14.18", "16.14"]
+    env:
+      POSTGRES_IMAGE: postgres:${{ matrix.version }}-alpine
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Start PostgreSQL ${{ matrix.version }}
         run: make up
-      - name: Compare expected, SQLazy, and native results
+      - name: Compare web runtime, expected CSV, compiled SQL, and native reference
         run: make verify
       - name: Stop services
         if: always()

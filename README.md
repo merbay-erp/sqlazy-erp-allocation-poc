@@ -8,17 +8,32 @@ It models time-phased demand and supply across materials and warehouses, execute
 
 | Check | Result |
 |---|---|
-| Official SQLazy web runtime | 7/7 expected rows matched |
-| SQLazy POSTGRES compiler | Generated 17,922 characters of executable SQL |
+| Current SQLazy web runtime | 35/35 steps executed; 7/7 expected rows matched |
+| Current SQLazy POSTGRES compiler | Captured; 772 lines / 20 CTEs including the view wrapper |
 | Independent native reference | 7/7 expected rows matched |
 | PostgreSQL 14.18 | Base case + 6 edge scenarios passed |
 | PostgreSQL 16.14 | Base case + 6 edge scenarios passed |
+| Deprecated conditional aggregate syntax | 0 occurrences; enforced by CI |
 | Conservation invariant | Passed on every row |
 | Total base shortage | 25 |
 | Multi-stream isolation | Passed |
 | Priority/date reversal | Passed without negative or reused supply |
 
 The captured web result, expected CSV, compiled SQL, and native output are compared bidirectionally by the test harness.
+
+## Tested against current SQLazy syntax — 2026-08-27
+
+- Current SQLazy syntax: **PASS**, with the documented trailing-condition binding workaround.
+- Main ERP scenario: **PASS**.
+- Seven expected rows: **MATCH**.
+- Six edge scenarios: **PASS**.
+- PostgreSQL 14.18: **PASS**.
+- PostgreSQL 16.14: **PASS**.
+- Independent native reference: **MATCH** and unchanged.
+- Current and legacy compiler SQL: **CAPTURED SEPARATELY**.
+- Deprecated prefix-condition syntax remaining: **0**.
+
+The current web release accepts the new trailing form, but its runtime/compiler presently applies each condition to the following aggregate rather than the preceding aggregate described in the product note. The POC keeps the new syntax and uses one explicit, unused seed aggregate to preserve the intended bindings. This is documented with the isolated before/after evidence in `COMPATIBILITY.md`; it is not a silent patch.
 
 ## The ERP problem
 
@@ -57,6 +72,8 @@ flowchart LR
 
 The adapter exists because the SQLazy compiler rejected a second join after an aggregate. It does not replace or alter the five source tables; it presents POs and destination-normalized transfers as one read-only event stream so the NSPL needs only one supply join.
 
+The allocation itself uses a **single-pass cumulative supply frontier**, not interval/round propagation. Each stream carries the maximum eligible supply reached so far, and only a frontier increase becomes new supply. That avoids extra propagation rounds when priority order moves dates backward. SQLazy's team independently reported that their interval-based attempt became fragile as those rounds accumulated; that feedback is recorded here as external validation of the design choice, not as a product claim.
+
 ## Fixed result
 
 | Material / warehouse | Demand | Type | Requested | Stock | PO | Transfer | Shortage | Projected |
@@ -87,7 +104,7 @@ make verify
 make down
 ```
 
-`make verify` recreates the PostgreSQL schema, loads the fixed data, installs both implementations, compares all four result artifacts, checks invariants and supply caps, then executes six rolled-back edge scenarios:
+`make verify` first rejects deprecated NSPL syntax, then recreates the PostgreSQL schema, loads the fixed data, installs both implementations, compares all four result artifacts, checks invariants and supply caps, and executes six rolled-back edge scenarios:
 
 - same-day priority;
 - late PO and transfer;
@@ -96,15 +113,17 @@ make down
 - priority ordering that moves required dates backward.
 - a demand stream with no opening-stock row.
 
-GitHub Actions runs the same PostgreSQL 16 verification on every push and pull request.
+GitHub Actions has a dedicated syntax-regression job and runs the full verification matrix on exact PostgreSQL 14.18 and 16.14 images for every push and pull request.
 
 ## Reproduce the SQLazy web run
 
 1. Open [SQLazy](https://www.sqlazy.com/).
 2. Add the CSV anchors in `sqlazy/input/`: `stock`, `sales_orders`, `production_orders`, and `supply_events_sqlazy`.
 3. Enter/import `sqlazy/allocation.nspl`.
-4. Run the final `allocation_result` step and compare it with `sqlazy/execution_result.csv`.
-5. Select `POSTGRES`, compile the final step, and compare it with the query body in `sqlazy/generated_postgresql.sql`.
+4. Run the complete 35-step workflow and compare `allocation_result` with `sqlazy/runtime/current-result.csv`.
+5. Select `POSTGRES`, compile the final step, and compare it with `sqlazy/compiled/postgres-current.sql`.
+
+Do not remove `compatibility_filter_seed` without first re-testing the binding behavior described in `COMPATIBILITY.md`.
 
 The base `purchase_orders` and `transfers` CSVs are also included so the adapter view can be independently reconstructed.
 
@@ -116,8 +135,11 @@ The base `purchase_orders` and `transfers` CSVs are also included so the adapter
 ├── schema/                 # exact ERP tables, indexes, adapter view, seed
 ├── sqlazy/
 │   ├── allocation.nspl     # 35 reviewable steps
-│   ├── generated_postgresql.sql
-│   ├── execution_result.csv
+│   ├── compiled/
+│   │   ├── postgres-current.sql
+│   │   └── postgres-legacy.sql
+│   ├── runtime/current-result.csv
+│   ├── execution_result.csv # legacy captured web result
 │   ├── execution-notes.md
 │   └── input/              # web-app-ready CSV anchors
 ├── native/reference_postgresql.sql
@@ -126,6 +148,8 @@ The base `purchase_orders` and `transfers` CSVs are also included so the adapter
 │   ├── verification.sql
 │   ├── edge_cases.sql
 │   └── edge_cases.md
+├── scripts/check_sqlazy_syntax.py
+├── COMPATIBILITY.md
 └── docs/
     ├── requirements-coverage.md
     ├── comparison.md
@@ -137,16 +161,19 @@ The base `purchase_orders` and `transfers` CSVs are also included so the adapter
 | Artifact | Size | Role |
 |---|---:|---|
 | SQLazy NSPL | 35 lines / 4.4 KB | Reviewable business workflow |
-| SQLazy-generated PostgreSQL | 753 lines / 18.1 KB / 20 CTEs | Executable compiler output |
+| Legacy SQLazy-generated PostgreSQL | 753 lines / 20 CTEs | Pre-migration compatibility baseline |
+| Current SQLazy-generated PostgreSQL | 772 lines / 20 CTEs | Current executable compiler output with explicit compatibility seed |
 | Native PostgreSQL reference | 213 lines / 7.1 KB | Independent per-lot control |
 
-SQLazy is much shorter at the source level. Native PL/pgSQL is more explicit about mutable lot balances. The generated SQL is correct for the tested cases but mechanically verbose and uses finite one-million-row running frames.
+The current artifact is 19 lines longer while the CTE count remains 20. This is compatibility evidence, not a performance conclusion. SQLazy is much shorter at the source level, while native PL/pgSQL remains more explicit about mutable lot balances.
 
 See `docs/comparison.md` for the row-by-row and implementation comparison, and `docs/requirements-coverage.md` for full challenge coverage.
 
 ## Honest boundary
 
-This is a correctness POC, not a production performance certification. It deliberately tests multiple streams, date eligibility, statuses, partial allocation, transfer destination, production demand, and backward-moving dates. It does not claim high-volume performance or replace concurrency/locking design required by a transactional ERP allocation service.
+This is a correctness POC, not a production performance certification. SQLazy's stated primary goals are deterministic, auditable, cross-database logic; generated-SQL readability and execution-plan optimization are not primary product goals. The emitted SQL is therefore retained here as reproducibility and compatibility evidence, while correctness against an independent reference remains the POC's test axis.
+
+The suite deliberately tests multiple streams, date eligibility, statuses, partial allocation, transfer destination, production demand, and backward-moving dates. It does not claim high-volume performance or replace concurrency/locking design required by a transactional ERP allocation service.
 
 The source-table contract and business result are complete for the stated challenge. The SQLazy adapter and observed compiler limitations are documented rather than hidden.
 
@@ -154,6 +181,7 @@ The source-table contract and business result are complete for the stated challe
 
 - `v1-core-poc`: original three-table core case.
 - `v2-full-erp-case`: full five-table challenge with production, transfers, multi-stream partitioning, compiler adapter, and expanded tests.
+- `v2.1-current-syntax`: current trailing-condition compatibility evidence and PostgreSQL 14.18/16.14 regression matrix.
 
 ## License
 

@@ -32,13 +32,14 @@ Cumulative eligible supply can fall when priority ordering moves required dates 
 
 ## Observed SQLazy behavior
 
-These are measured observations from the web app on 2026-08-25:
+These are measured observations from the web app, with the current-syntax run repeated on 2026-08-27:
 
 - Direct current-alias state expressions ran in the interpreter but the compiler rejected them.
 - Numeric `nvl` generated PostgreSQL expressions comparing numbers with empty strings.
 - A second join after an aggregate failed compilation with only `null` as the reported cause.
 - Refactoring to window regulators, `isnull`/`if`, one supply join, and a supply frontier produced executable PostgreSQL.
-- The final 35 NSPL steps expanded into 753 SQL lines and 20 CTEs.
+- The direct trailing-condition migration was accepted but shifted each condition to the following aggregate, changing valid-looking seven-row results. The explicit seed workaround restored exact fixture semantics; see `COMPATIBILITY.md`.
+- The preserved legacy compiler artifact is 753 lines / 20 CTEs; the current artifact is 772 lines / 20 CTEs.
 
 ## Remaining engineering boundary
 
@@ -51,4 +52,4 @@ The POC is correctness-complete for the stated challenge, but not production-cer
 
 ## Verdict
 
-SQLazy passes the full correctness POC when the workflow is shaped around the observed compiler constraints. Its source representation is compact and reviewable; native PostgreSQL remains the more explicit control for lot-by-lot mutable state. The repository demonstrates both claims with runnable evidence.
+SQLazy passes the full correctness POC when the workflow is shaped around the observed runtime/compiler constraints. Its source representation is compact and reviewable; native PostgreSQL remains the more explicit control for lot-by-lot mutable state. Generated-SQL readability and plan-level optimization are not treated as SQLazy's primary goals, while independent correctness validation remains the test axis of this repository.

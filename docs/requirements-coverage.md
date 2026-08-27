@@ -21,8 +21,9 @@ This matrix maps every requirement in the public ERP allocation challenge to exe
 | Multiple streams | All stateful windows partition by material/warehouse stream | M100/W1 and M200/W2 base data |
 | Exact requested output | Eleven named output columns | Expected, web, compiler, and native result tables |
 | Independent control | PL/pgSQL tracks stock and individual PO/transfer lots | `native/reference_postgresql.sql` |
-| Real SQLazy evidence | Official web runtime output and POSTGRES compiler output are captured | `sqlazy/execution_result.csv`, `sqlazy/generated_postgresql.sql` |
-| Reproducibility | Docker PostgreSQL 16 plus GitHub Actions | `Makefile`, `docker-compose.yml`, CI workflow |
+| Real SQLazy evidence | Current official web runtime and POSTGRES compiler output are captured without overwriting the legacy artifacts | `sqlazy/runtime/current-result.csv`, `sqlazy/compiled/postgres-current.sql`, `sqlazy/compiled/postgres-legacy.sql` |
+| Syntax regression | Deprecated prefix-form conditional aggregates cannot return unnoticed | `scripts/check_sqlazy_syntax.py`, CI syntax job |
+| Reproducibility | Exact Docker PostgreSQL 14.18/16.14 matrix plus GitHub Actions | `Makefile`, `docker-compose.yml`, CI workflow |
 
 ## Compiler adapter
 

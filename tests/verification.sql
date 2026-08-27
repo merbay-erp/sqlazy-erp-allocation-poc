@@ -16,7 +16,7 @@ CREATE TEMP TABLE expected_result (
 
 CREATE TEMP TABLE sqlazy_web_result (LIKE expected_result INCLUDING ALL);
 
-\copy sqlazy_web_result FROM 'sqlazy/execution_result.csv' WITH (FORMAT csv, HEADER true)
+\copy sqlazy_web_result FROM 'sqlazy/runtime/current-result.csv' WITH (FORMAT csv, HEADER true)
 
 DO $$
 BEGIN
@@ -68,7 +68,9 @@ BEGIN
     END IF;
 
     IF (SELECT COUNT(*) FROM native_allocation_result) <> 7
-       OR (SELECT COUNT(*) FROM sqlazy_allocation_result) <> 7 THEN
+       OR (SELECT COUNT(*) FROM sqlazy_allocation_result) <> 7
+       OR (SELECT COUNT(*) FROM sqlazy_web_result) <> 7
+       OR (SELECT COUNT(*) FROM expected_result) <> 7 THEN
         RAISE EXCEPTION 'expected exactly seven valid demand rows';
     END IF;
 

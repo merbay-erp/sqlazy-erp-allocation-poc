@@ -2,7 +2,7 @@
 
 ## Row-by-row result
 
-The fixed dataset was run in the official SQLazy web app on 2026-08-25. The final runtime table was captured in `sqlazy/execution_result.csv`. SQLazy's POSTGRES compiler output and the independent native implementation were then run in PostgreSQL 14.18 and 16.14.
+The fixed dataset was rerun in the official SQLazy web app on 2026-08-27 with the current trailing-condition syntax. The final runtime table was captured in `sqlazy/runtime/current-result.csv`. SQLazy's current POSTGRES compiler output and the independent native implementation were then run in PostgreSQL 14.18 and 16.14.
 
 | Demand | Expected stock / PO / transfer / shortage | SQLazy web | Compiled PostgreSQL | Native PostgreSQL |
 |---|---:|---:|---:|---:|
@@ -22,7 +22,7 @@ Total shortage is 25. All seven rows satisfy conservation and non-negative alloc
 |---|---|---|
 | Source form | 35 declarative NSPL steps | PL/pgSQL function + view |
 | Source size | 35 lines / 4.4 KB | 213 lines / 7.1 KB |
-| Database form | 753 generated lines, 20 CTEs | Procedural function returning rows |
+| Database form | 772 current generated lines, 20 CTEs; 753-line legacy artifact retained | Procedural function returning rows |
 | Demand state | Partitioned windows per material/warehouse | Ordered loop with stream reset |
 | PO/transfer state | Running availability frontier + shortage regulators | JSONB balance per individual lot |
 | Supply precedence | Separate stock, PO, and transfer stages | Explicit sequential mutation |
@@ -66,6 +66,7 @@ The final NSPL carries the maximum cumulative eligible supply reached so far per
 - A direct current-alias formulation ran but did not compile.
 - Numeric `nvl` emitted invalid PostgreSQL comparisons to empty strings; `isnull`/`if` was required.
 - A second join after an aggregate caused the compiler to return only a null error. The read-only supply adapter avoids that compiler path.
+- Current trailing-condition binding shifted filters to the following aggregate; the explicit compatibility seed is documented and fixture-tested.
 - Relative running windows compile as `1000000 PRECEDING`, not true unbounded frames.
 - Generated SQL is much larger than both the NSPL and native control.
 
@@ -73,4 +74,4 @@ The final NSPL carries the maximum cumulative eligible supply reached so far per
 
 No throughput claim is made from seven rows. Tiny-data timings would measure startup and PL/pgSQL overhead rather than allocation scalability. A production decision needs representative volume, indexes, concurrent allocation semantics, and query-plan/lock analysis.
 
-For this POC, correctness is measured; performance qualification is intentionally not inferred.
+SQLazy's team clarified that generated-SQL readability and execution-plan optimization are not primary product goals. For this POC, emitted SQL is retained as compatibility evidence, correctness is measured, and performance qualification is intentionally not inferred.
