@@ -22,7 +22,7 @@ Total shortage is 25. All seven rows satisfy conservation and non-negative alloc
 |---|---|---|
 | Source form | 35 declarative NSPL steps | PL/pgSQL function + view |
 | Source size | 35 lines / 4.4 KB | 213 lines / 7.1 KB |
-| Database form | 772 current generated lines, 20 CTEs; 753-line legacy artifact retained | Procedural function returning rows |
+| Database form | 757 fixed-runtime lines, 20 CTEs; 772-line stale-workaround and 753-line legacy artifacts retained | Procedural function returning rows |
 | Demand state | Partitioned windows per material/warehouse | Ordered loop with stream reset |
 | PO/transfer state | Running availability frontier + shortage regulators | JSONB balance per individual lot |
 | Supply precedence | Separate stock, PO, and transfer stages | Explicit sequential mutation |
@@ -66,7 +66,7 @@ The final NSPL carries the maximum cumulative eligible supply reached so far per
 - A direct current-alias formulation ran but did not compile.
 - Numeric `nvl` emitted invalid PostgreSQL comparisons to empty strings; `isnull`/`if` was required.
 - A second join after an aggregate caused the compiler to return only a null error. The read-only supply adapter avoids that compiler path.
-- Current trailing-condition binding shifted filters to the following aggregate; the explicit compatibility seed is documented and fixture-tested.
+- A stale web jar once shifted trailing filters to the following aggregate. The updated runtime binds to the preceding aggregate correctly; the removed workaround and its artifact remain documented for history.
 - Relative running windows compile as `1000000 PRECEDING`, not true unbounded frames.
 - Generated SQL is much larger than both the NSPL and native control.
 

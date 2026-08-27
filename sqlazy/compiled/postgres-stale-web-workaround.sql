@@ -1,5 +1,5 @@
 -- Current SQLazy POSTGRES compiler output from sqlazy/allocation.nspl.
--- Captured from https://www.sqlazy.com/ on 2026-08-27 after the web runtime was updated.
+-- Captured from https://www.sqlazy.com/ on 2026-08-27.
 CREATE OR REPLACE VIEW sqlazy_allocation_result AS
 WITH sales_demand AS (
   SELECT
@@ -101,6 +101,7 @@ demand_resorted AS (
     MAX(col_8) AS requested_qty,
     MAX(col_9) AS priority,
     MAX(col_10) AS usable_stock,
+    SUM(supply_qty) AS compatibility_filter_seed,
     SUM(
       CASE
         WHEN (
@@ -215,6 +216,7 @@ supply_frontier AS (
     requested_qty,
     priority,
     usable_stock,
+    compatibility_filter_seed,
     cumulative_po,
     cumulative_transfer,
     MAX(cumulative_po) OVER (
@@ -249,6 +251,7 @@ demand_cum AS (
     requested_qty,
     priority,
     usable_stock,
+    compatibility_filter_seed,
     cumulative_po,
     cumulative_transfer,
     po_frontier,
@@ -317,6 +320,7 @@ stock_alloc AS (
     requested_qty,
     priority,
     usable_stock,
+    compatibility_filter_seed,
     cumulative_po,
     cumulative_transfer,
     po_frontier,
@@ -349,6 +353,7 @@ po_need AS (
     requested_qty,
     priority,
     usable_stock,
+    compatibility_filter_seed,
     cumulative_po,
     cumulative_transfer,
     po_frontier,
@@ -373,6 +378,7 @@ po_net AS (
     requested_qty,
     priority,
     usable_stock,
+    compatibility_filter_seed,
     cumulative_po,
     cumulative_transfer,
     po_frontier,
@@ -405,6 +411,7 @@ po_min AS (
     requested_qty,
     priority,
     usable_stock,
+    compatibility_filter_seed,
     cumulative_po,
     cumulative_transfer,
     po_frontier,
@@ -439,6 +446,7 @@ po_regulator AS (
     requested_qty,
     priority,
     usable_stock,
+    compatibility_filter_seed,
     cumulative_po,
     cumulative_transfer,
     po_frontier,
@@ -469,6 +477,7 @@ po_shortage_delta AS (
     requested_qty,
     priority,
     usable_stock,
+    compatibility_filter_seed,
     cumulative_po,
     cumulative_transfer,
     po_frontier,
@@ -514,6 +523,7 @@ transfer_net AS (
     requested_qty,
     priority,
     usable_stock,
+    compatibility_filter_seed,
     cumulative_po,
     cumulative_transfer,
     po_frontier,
@@ -552,6 +562,7 @@ transfer_min AS (
     requested_qty,
     priority,
     usable_stock,
+    compatibility_filter_seed,
     cumulative_po,
     cumulative_transfer,
     po_frontier,
@@ -592,6 +603,7 @@ transfer_regulator AS (
     requested_qty,
     priority,
     usable_stock,
+    compatibility_filter_seed,
     cumulative_po,
     cumulative_transfer,
     po_frontier,
@@ -628,6 +640,7 @@ shortage_delta AS (
     requested_qty,
     priority,
     usable_stock,
+    compatibility_filter_seed,
     cumulative_po,
     cumulative_transfer,
     po_frontier,
@@ -679,6 +692,7 @@ transfer_balance AS (
     requested_qty,
     priority,
     usable_stock,
+    compatibility_filter_seed,
     cumulative_po,
     cumulative_transfer,
     po_frontier,
@@ -715,6 +729,7 @@ projected_balance AS (
     requested_qty,
     priority,
     usable_stock,
+    compatibility_filter_seed,
     cumulative_po,
     cumulative_transfer,
     po_frontier,

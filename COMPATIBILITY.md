@@ -7,6 +7,19 @@
 - Reference syntax example: <https://www.sqlazy.com/?3OH>
 - Workflow: all 35 steps in `sqlazy/allocation.nspl`
 
+## Current status
+
+The updated web runtime implements the documented trailing-condition semantics: a condition binds to the preceding named aggregate. The current workflow therefore uses the natural form with no compatibility seed:
+
+```text
+sum supply_qty as cumulative_po,
+condition (supply_type="PURCHASE_ORDER" && available_date<=required_date),
+sum supply_qty as cumulative_transfer,
+condition (supply_type="TRANSFER" && available_date<=required_date)
+```
+
+The web interpreter and `POSTGRES` compiler both apply the purchase-order condition to `cumulative_po` and the transfer condition to `cumulative_transfer`.
+
 ## Conditional aggregate migration
 
 The deprecated prefix form was removed:
@@ -23,9 +36,11 @@ sum supply_qty as cumulative_po, condition (...)
 
 `scripts/check_sqlazy_syntax.py` scans every `.nspl` file and fails CI if a prefix-form conditional sum returns. It also rejects a trailing `condition` that is not immediately preceded by a named `sum` clause.
 
-## Observed trailing-condition binding defect
+## Historical stale web-runtime incident
 
-The current release accepts the new syntax, but the tested runtime/compiler binding does not match the announced semantics. With the direct migration:
+### Observed behavior
+
+During the first current-syntax migration, the web runtime and compiler accepted the trailing form but bound each condition to the following aggregate. The direct migration produced this mapping:
 
 ```text
 sum supply_qty as cumulative_po,
@@ -36,17 +51,21 @@ condition (supply_type="TRANSFER" && available_date<=required_date)
 
 the official runtime produced this mapping:
 
-| Output aggregate | Expected filter | Observed filter |
+| Output aggregate | Expected filter | Stale runtime behavior |
 |---|---|---|
 | `cumulative_po` | purchase order + available date | none; all joined supply was summed |
 | `cumulative_transfer` | transfer + available date | purchase order + available date |
 | final trailing condition | binds to `cumulative_transfer` | omitted because no aggregate followed it |
 
-That shifted future supply into earlier demands. For example, SO001's projected balance became 150 instead of 30. The run still returned seven rows, so a compile-only or row-count-only test would not have caught the regression.
+That introduced future supply too early: SO001's projected balance became 150 instead of 30 even though the workflow still returned seven rows.
 
-## Explicit workaround
+### Root cause
 
-The POC inserts one visible, unused aggregate before the first condition:
+SQLazy confirmed that the web application was running a stale jar maintained by a separate team. The locally verified/current build already implemented preceding-aggregate binding correctly, but the web jar had not been synchronized. The web runtime was subsequently updated to that fixed build.
+
+### Removed workaround
+
+The temporary workaround inserted an unused aggregate before the shifted conditions:
 
 ```text
 sum supply_qty as compatibility_filter_seed,
@@ -56,24 +75,38 @@ condition (supply_type="TRANSFER" && available_date<=required_date),
 sum supply_qty as cumulative_transfer
 ```
 
-Under the observed binding, the first condition now filters `cumulative_po` and the second filters `cumulative_transfer`. `compatibility_filter_seed` is propagated by the generated SQL but is never used by the allocation logic and is excluded from the final eleven-column result.
+That workaround was valid only for the stale next-aggregate binding. On the fixed runtime it backfired: `cumulative_po` received the transfer filter and `cumulative_transfer` became unfiltered, reproducing the reported 120/30-across-the-board pattern. It has been removed from current code. The generated artifact from that historical run remains available as `sqlazy/compiled/postgres-stale-web-workaround.sql`; `sqlazy/compiled/postgres-legacy.sql` is also retained.
 
-This workaround must not be removed silently. When SQLazy corrects the runtime/compiler to bind a condition to the preceding aggregate, this line should fail the fixture comparison and be revisited against the then-current release.
+## Evidence after the fixed web runtime
 
-## Evidence after the workaround
+The `demand_supply` intermediate now contains the intended cumulative eligibility values:
+
+| Demand | `cumulative_po` | `cumulative_transfer` |
+|---|---:|---:|
+| SO001 | 0 | 0 |
+| SO002 | 40 | 0 |
+| SO003 | 90 | 30 |
+| PROD001 | 90 | 30 |
+| SO201 | 0 | 0 |
+| SO202 | 10 | 5 |
+| PROD201 | 10 | 5 |
+
+The web table renders a blank cell where no eligible supply exists; downstream logic treats that state as zero. The stale across-the-board values are absent.
 
 | Check | Evidence |
 |---|---|
-| Current web runtime | 35/35 named steps materialized without an error |
+| Updated web runtime | 35/35 named steps materialized without an error |
 | Main result | 7/7 rows match `expected/expected_result.csv` exactly |
+| SO001 projected balance | 30 |
 | Edge scenarios | All 6 pass against compiled and native implementations |
 | PostgreSQL | Exact server versions 14.18 and 16.14 pass |
 | Native reference | Unchanged SHA-256: `c7c237af0610196a59c899a94c5464d3afc5ec30076964e057215abe47bf32d6` |
 | Legacy compiler artifact | 753 lines / 20 CTEs |
-| Current compiler artifact | 772 lines / 20 CTEs |
+| Stale-web workaround artifact | 772 lines / 20 CTEs |
+| Fixed-runtime current artifact | 757 lines / 20 CTEs |
 | Deprecated prefix syntax | 0 occurrences |
 
-The 19-line increase is recorded only as compatibility evidence. Generated-SQL readability and execution-plan optimization are not treated as SQLazy's primary goals; the relevant POC claim remains correctness against the fixed CSV and independent native control.
+The artifact sizes are compatibility evidence only. Generated-SQL readability and execution-plan optimization are not treated as SQLazy's primary goals; the relevant POC claim remains correctness against the fixed CSV and independent native control.
 
 ## Running-frontier design
 

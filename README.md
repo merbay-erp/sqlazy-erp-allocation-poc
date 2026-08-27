@@ -9,7 +9,7 @@ It models time-phased demand and supply across materials and warehouses, execute
 | Check | Result |
 |---|---|
 | Current SQLazy web runtime | 35/35 steps executed; 7/7 expected rows matched |
-| Current SQLazy POSTGRES compiler | Captured; 772 lines / 20 CTEs including the view wrapper |
+| Current SQLazy POSTGRES compiler | Captured; 757 lines / 20 CTEs including the view wrapper |
 | Independent native reference | 7/7 expected rows matched |
 | PostgreSQL 14.18 | Base case + 6 edge scenarios passed |
 | PostgreSQL 16.14 | Base case + 6 edge scenarios passed |
@@ -23,17 +23,17 @@ The captured web result, expected CSV, compiled SQL, and native output are compa
 
 ## Tested against current SQLazy syntax — 2026-08-27
 
-- Current SQLazy syntax: **PASS**, with the documented trailing-condition binding workaround.
+- Current SQLazy syntax: **PASS**, using the documented natural trailing-condition binding.
 - Main ERP scenario: **PASS**.
 - Seven expected rows: **MATCH**.
 - Six edge scenarios: **PASS**.
 - PostgreSQL 14.18: **PASS**.
 - PostgreSQL 16.14: **PASS**.
 - Independent native reference: **MATCH** and unchanged.
-- Current and legacy compiler SQL: **CAPTURED SEPARATELY**.
+- Current, stale-workaround, and legacy compiler SQL: **CAPTURED SEPARATELY**.
 - Deprecated prefix-condition syntax remaining: **0**.
 
-The current web release accepts the new trailing form, but its runtime/compiler presently applies each condition to the following aggregate rather than the preceding aggregate described in the product note. The POC keeps the new syntax and uses one explicit, unused seed aggregate to preserve the intended bindings. This is documented with the isolated before/after evidence in `COMPATIBILITY.md`; it is not a silent patch.
+The current web runtime now applies each trailing condition to the preceding aggregate as documented. The stale web jar that previously mis-bound conditions has been replaced, and the temporary `compatibility_filter_seed` workaround has been removed. `COMPATIBILITY.md` retains the incident, root cause, failed-output signature, and preserved compiler artifact as historical evidence.
 
 ## The ERP problem
 
@@ -123,7 +123,7 @@ GitHub Actions has a dedicated syntax-regression job and runs the full verificat
 4. Run the complete 35-step workflow and compare `allocation_result` with `sqlazy/runtime/current-result.csv`.
 5. Select `POSTGRES`, compile the final step, and compare it with `sqlazy/compiled/postgres-current.sql`.
 
-Do not remove `compatibility_filter_seed` without first re-testing the binding behavior described in `COMPATIBILITY.md`.
+The current step 14 intentionally uses the natural PO/transfer condition placement without a compatibility seed.
 
 The base `purchase_orders` and `transfers` CSVs are also included so the adapter view can be independently reconstructed.
 
@@ -137,6 +137,7 @@ The base `purchase_orders` and `transfers` CSVs are also included so the adapter
 │   ├── allocation.nspl     # 35 reviewable steps
 │   ├── compiled/
 │   │   ├── postgres-current.sql
+│   │   ├── postgres-stale-web-workaround.sql
 │   │   └── postgres-legacy.sql
 │   ├── runtime/current-result.csv
 │   ├── execution_result.csv # legacy captured web result
@@ -162,10 +163,11 @@ The base `purchase_orders` and `transfers` CSVs are also included so the adapter
 |---|---:|---|
 | SQLazy NSPL | 35 lines / 4.4 KB | Reviewable business workflow |
 | Legacy SQLazy-generated PostgreSQL | 753 lines / 20 CTEs | Pre-migration compatibility baseline |
-| Current SQLazy-generated PostgreSQL | 772 lines / 20 CTEs | Current executable compiler output with explicit compatibility seed |
+| Stale-web workaround PostgreSQL | 772 lines / 20 CTEs | Historical next-aggregate-binding workaround |
+| Current SQLazy-generated PostgreSQL | 757 lines / 20 CTEs | Fixed-runtime output with natural preceding-aggregate binding |
 | Native PostgreSQL reference | 213 lines / 7.1 KB | Independent per-lot control |
 
-The current artifact is 19 lines longer while the CTE count remains 20. This is compatibility evidence, not a performance conclusion. SQLazy is much shorter at the source level, while native PL/pgSQL remains more explicit about mutable lot balances.
+The three generated artifacts are retained separately as compatibility evidence, not as a performance conclusion. SQLazy is much shorter at the source level, while native PL/pgSQL remains more explicit about mutable lot balances.
 
 See `docs/comparison.md` for the row-by-row and implementation comparison, and `docs/requirements-coverage.md` for full challenge coverage.
 
@@ -182,6 +184,7 @@ The source-table contract and business result are complete for the stated challe
 - `v1-core-poc`: original three-table core case.
 - `v2-full-erp-case`: full five-table challenge with production, transfers, multi-stream partitioning, compiler adapter, and expanded tests.
 - `v2.1-current-syntax`: current trailing-condition compatibility evidence and PostgreSQL 14.18/16.14 regression matrix.
+- `v2.2-fixed-web-runtime`: fixed web-runtime revalidation with the workaround removed and historical artifacts preserved.
 
 ## License
 

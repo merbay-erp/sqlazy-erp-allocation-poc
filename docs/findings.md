@@ -38,8 +38,8 @@ These are measured observations from the web app, with the current-syntax run re
 - Numeric `nvl` generated PostgreSQL expressions comparing numbers with empty strings.
 - A second join after an aggregate failed compilation with only `null` as the reported cause.
 - Refactoring to window regulators, `isnull`/`if`, one supply join, and a supply frontier produced executable PostgreSQL.
-- The direct trailing-condition migration was accepted but shifted each condition to the following aggregate, changing valid-looking seven-row results. The explicit seed workaround restored exact fixture semantics; see `COMPATIBILITY.md`.
-- The preserved legacy compiler artifact is 753 lines / 20 CTEs; the current artifact is 772 lines / 20 CTEs.
+- A stale web jar initially shifted each trailing condition to the following aggregate, changing valid-looking seven-row results. SQLazy synchronized the web runtime to the fixed build; current code now uses natural preceding-aggregate binding with no seed. The incident remains documented in `COMPATIBILITY.md`.
+- The preserved artifacts are 753 lines / 20 CTEs for legacy, 772 / 20 for the stale-web workaround, and 757 / 20 for the fixed-runtime current compiler output.
 
 ## Remaining engineering boundary
 
@@ -52,4 +52,4 @@ The POC is correctness-complete for the stated challenge, but not production-cer
 
 ## Verdict
 
-SQLazy passes the full correctness POC when the workflow is shaped around the observed runtime/compiler constraints. Its source representation is compact and reviewable; native PostgreSQL remains the more explicit control for lot-by-lot mutable state. Generated-SQL readability and plan-level optimization are not treated as SQLazy's primary goals, while independent correctness validation remains the test axis of this repository.
+SQLazy passes the full correctness POC on the updated web runtime with documented natural trailing-condition syntax. Its source representation is compact and reviewable; native PostgreSQL remains the more explicit control for lot-by-lot mutable state. Generated-SQL readability and plan-level optimization are not treated as SQLazy's primary goals, while independent correctness validation remains the test axis of this repository.
